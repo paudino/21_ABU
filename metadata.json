@@ -1,0 +1,5 @@
+{
+  "name": "21_ABU_deploy_01",
+  "description": "Un aggregatore di notizie positive basato sull'AI. Filtra notizie con sentiment > 0.7, genera immagini dai titoli e permette interazioni sociali.",
+  "requestFramePermissions": []
+}

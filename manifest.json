@@ -1,0 +1,22 @@
+
+{
+  "short_name": "Buon Umore",
+  "name": "L'angolo del Buon Umore",
+  "description": "Notizie positive e sfide quotidiane per una vita più felice.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/869/869869.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/869/869869.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#f97316",
+  "background_color": "#ffffff"
+}
