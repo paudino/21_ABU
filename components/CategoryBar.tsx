@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Category, User } from '../types';
 import { IconPlus, IconSearch, IconXIcon, IconCheck, IconTrash } from './Icons';
 
@@ -13,6 +13,7 @@ interface CategoryBarProps {
   onSearch?: (term: string) => void;
 }
 
+// Fix: Imported React to resolve namespace issue
 export const CategoryBar: React.FC<CategoryBarProps> = ({
   categories,
   activeCategory,
@@ -50,6 +51,7 @@ export const CategoryBar: React.FC<CategoryBarProps> = ({
     }
   };
 
+  // Fix: Imported React to resolve namespace issue
   const handleDeleteClick = (e: React.MouseEvent, cat: Category) => {
       e.preventDefault();
       e.stopPropagation(); 

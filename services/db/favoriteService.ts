@@ -61,7 +61,6 @@ export const getUserFavoriteArticles = async (userId: string): Promise<Article[]
     console.log("[DB-FAVS] 📡 Recupero articoli preferiti dal DB per utente:", userId);
     
     try {
-        // CORREZIONE: audio_base64 (senza underscore prima di 64) per corrispondere allo schema
         const { data, error } = await supabase
             .from('favorites')
             .select(`
@@ -84,48 +83,42 @@ export const getUserFavoriteArticles = async (userId: string): Promise<Article[]
 
         if (error) {
             console.error("[DB-FAVS] ❌ Errore query preferiti:", error.message);
-            console.error("[DB-FAVS] Dettagli errore:", error);
             return [];
         }
 
         if (!data || data.length === 0) {
-            console.log("[DB-FAVS] ℹ️ Nessun articolo preferito trovato per questo utente.");
+            console.log("[DB-FAVS] ℹ️ Nessun articolo preferito trovato.");
             return [];
         }
 
-        console.log(`[DB-FAVS] 📦 Dati grezzi ricevuti: ${data.length} righe.`);
-
-        const mapped = data
-            .filter(item => {
-                if (!item.articles) {
-                    console.warn(`[DB-FAVS] ⚠️ Articolo mancante per favorite con ID: ${item.article_id}`);
-                    return false;
-                }
-                return true;
-            })
+        const mapped: Article[] = data
             .map(item => {
-                const a: any = item.articles;
+                // Gestione robusta della risposta Supabase: 'articles' può essere un oggetto o un array di un elemento
+                const rawArt = Array.isArray(item.articles) ? item.articles[0] : item.articles;
+                
+                if (!rawArt) return null;
+
                 return {
-                    id: a.id,
-                    title: a.title,
-                    summary: a.summary,
-                    source: a.source,
-                    url: a.url,
-                    date: a.published_date || '',
-                    category: a.category || 'Generale',
-                    imageUrl: a.image_url || '',
-                    // Fix: Use audio_base64 to match database schema
-                    audioBase64: a.audio_base64 || '',
-                    sentimentScore: a.sentiment_score || 0.8,
+                    id: rawArt.id,
+                    title: rawArt.title,
+                    summary: rawArt.summary,
+                    source: rawArt.source,
+                    url: rawArt.url,
+                    date: rawArt.published_date || '',
+                    category: rawArt.category || 'Generale',
+                    imageUrl: rawArt.image_url || '',
+                    audioBase64: rawArt.audio_base64 || '',
+                    sentimentScore: rawArt.sentiment_score || 0.8,
                     likeCount: 0,
                     dislikeCount: 0
                 };
-            });
+            })
+            .filter((a): a is Article => a !== null);
             
-        console.log(`[DB-FAVS] ✅ Recuperati con successo ${mapped.length} articoli preferiti.`);
+        console.log(`[DB-FAVS] ✅ Mappati ${mapped.length} articoli preferiti.`);
         return mapped;
     } catch (e) {
-        console.error("[DB-FAVS] ❌ Eccezione fatale durante il recupero dei preferiti:", e);
+        console.error("[DB-FAVS] ❌ Eccezione nel recupero preferiti:", e);
         return [];
     }
 };
@@ -138,7 +131,6 @@ export const getUserFavoritesIds = async (userId: string): Promise<Set<string>> 
             console.error("[DB-FAVS] ❌ Errore recupero ID preferiti:", error.message);
             return new Set();
         }
-        // Fix: Explicitly type the Set as Set<string> and cast article_id to string to resolve unknown type error
         const ids = new Set<string>(data?.map(r => r.article_id as string) || []);
         console.log(`[DB-FAVS] 🔑 Sincronizzati ${ids.size} ID preferiti.`);
         return ids;

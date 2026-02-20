@@ -18,7 +18,7 @@ export const useNewsApp = () => {
   const [notification, setNotification] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  const notificationTimeoutRef = useRef<number>(null);
+  const notificationTimeoutRef = useRef<number | null>(null);
   const currentRequestMode = useRef<string>('news');
 
   const showToast = useCallback((msg: string, duration = 4000) => {
@@ -29,11 +29,35 @@ export const useNewsApp = () => {
     }, duration);
   }, []);
 
+  // Normalizzazione URL per confronto coerente
+  const normalizeUrl = (url: string): string => {
+    try {
+      const u = new URL(url);
+      return (u.hostname + u.pathname.replace(/\/$/, "")).toLowerCase();
+    } catch {
+      return url.trim().toLowerCase().replace(/\/$/, "");
+    }
+  };
+
+  // Deduplicazione avanzata basata su URL normalizzato
+  const deduplicate = (list: Article[]): Article[] => {
+    const seenNorm = new Set();
+    const seenId = new Set();
+    return list.filter(item => {
+      const norm = normalizeUrl(item.url);
+      if (seenNorm.has(norm)) return false;
+      if (item.id && seenId.has(item.id)) return false;
+      
+      seenNorm.add(norm);
+      if (item.id) seenId.add(item.id);
+      return true;
+    });
+  };
+
   const enrichArticlesWithCounts = async (list: Article[]) => {
     const ids = list.map(a => a.id).filter((id): id is string => !!id);
     if (ids.length === 0) return list;
     
-    console.log(`[BUON-UMORE] 🔄 Arricchimento di ${list.length} articoli con voti dal DB`);
     try {
         const counts = await db.getBatchCounts(ids);
         return list.map(a => ({
@@ -141,7 +165,7 @@ export const useNewsApp = () => {
       if (!forceAi) {
         const cached = await db.getCachedArticles(label);
         if (cached && cached.length > 0) {
-          finalArticles = await enrichArticlesWithCounts(cached);
+          finalArticles = deduplicate(await enrichArticlesWithCounts(cached));
           setArticles(finalArticles); 
           setLoading(false); 
           return; 
@@ -150,8 +174,12 @@ export const useNewsApp = () => {
       
       const aiArticles = await fetchPositiveNews(query, label);
       if (aiArticles && aiArticles.length > 0) {
-        const saved = await db.saveArticles(label, aiArticles);
-        finalArticles = await enrichArticlesWithCounts(saved.map(a => ({ ...a, isNew: true })));
+        // Salviamo nel DB (upsert gestisce i duplicati a livello di database)
+        await db.saveArticles(label, aiArticles);
+        
+        // Ricarichiamo dal cache per avere ID corretti e dati puliti
+        const cachedAfterSave = await db.getCachedArticles(label);
+        finalArticles = deduplicate(await enrichArticlesWithCounts(cachedAfterSave));
         setArticles(finalArticles);
       } else if (forceAi) {
         showToast("Nessuna nuova notizia trovata ora.");
@@ -212,7 +240,7 @@ export const useNewsApp = () => {
         setLoading(true);
         db.getUserFavoriteArticles(currentUser.id).then(async favs => {
           if (!isMounted || currentRequestMode.current !== 'favorites') return;
-          const enriched = await enrichArticlesWithCounts(favs);
+          const enriched = deduplicate(await enrichArticlesWithCounts(favs));
           setArticles(enriched); 
           setFavoriteArticleIds(new Set(enriched.map(a => a.id).filter((id): id is string => !!id)));
           setLoading(false);
