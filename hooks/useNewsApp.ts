@@ -20,6 +20,7 @@ export const useNewsApp = () => {
 
   const notificationTimeoutRef = useRef<number | null>(null);
   const currentRequestMode = useRef<string>('news');
+  const initialLoadRef = useRef(false);
 
   const showToast = useCallback((msg: string, duration = 4000) => {
     if (notificationTimeoutRef.current) window.clearTimeout(notificationTimeoutRef.current);
@@ -29,7 +30,6 @@ export const useNewsApp = () => {
     }, duration);
   }, []);
 
-  // Normalizzazione URL per confronto coerente
   const normalizeUrl = (url: string): string => {
     try {
       const u = new URL(url);
@@ -39,7 +39,6 @@ export const useNewsApp = () => {
     }
   };
 
-  // Deduplicazione avanzata basata su URL normalizzato
   const deduplicate = (list: Article[]): Article[] => {
     const seenNorm = new Set();
     const seenId = new Set();
@@ -47,7 +46,6 @@ export const useNewsApp = () => {
       const norm = normalizeUrl(item.url);
       if (seenNorm.has(norm)) return false;
       if (item.id && seenId.has(item.id)) return false;
-      
       seenNorm.add(norm);
       if (item.id) seenId.add(item.id);
       return true;
@@ -57,7 +55,6 @@ export const useNewsApp = () => {
   const enrichArticlesWithCounts = async (list: Article[]) => {
     const ids = list.map(a => a.id).filter((id): id is string => !!id);
     if (ids.length === 0) return list;
-    
     try {
         const counts = await db.getBatchCounts(ids);
         return list.map(a => ({
@@ -66,7 +63,6 @@ export const useNewsApp = () => {
             dislikeCount: a.id ? (counts.dislikes[a.id] || 0) : 0
         }));
     } catch (e) {
-        console.error("[BUON-UMORE] ❌ Errore arricchimento voti:", e);
         return list;
     }
   };
@@ -78,16 +74,12 @@ export const useNewsApp = () => {
 
   const ensureArticleSaved = async (article: Article): Promise<string | null> => {
       if (article.id && /^[0-9a-fA-F-]{36}$/.test(article.id)) return article.id;
-      
       const { data } = await supabase.from('articles').select('id').eq('url', article.url).maybeSingle();
       if (data?.id) return data.id;
-
       try {
           const saved = await db.saveArticles(article.category || 'Generale', [article]);
           if (saved && saved.length > 0) return saved[0].id || null;
-      } catch (e) {
-          console.error("[BUON-UMORE] Errore salvataggio preventivo:", e);
-      }
+      } catch (e) {}
       return null;
   };
 
@@ -95,7 +87,6 @@ export const useNewsApp = () => {
       if (!currentUser) return setShowLoginModal(true);
       const targetId = await ensureArticleSaved(article);
       if (!targetId) return;
-
       try {
           const isFav = favoriteArticleIds.has(targetId);
           if (isFav) {
@@ -115,50 +106,41 @@ export const useNewsApp = () => {
               });
               showToast("Aggiunto ai preferiti! ❤️");
           }
-      } catch (error) {
-          console.error("[BUON-UMORE] Errore toggle favorite:", error);
-      }
+      } catch (error) {}
   }, [currentUser, favoriteArticleIds, showToast]);
 
-  const handleLike = async (article: Article) => {
-      if (!currentUser) return setShowLoginModal(true);
-      const targetId = await ensureArticleSaved(article);
-      if (!targetId) return;
+  // Fix: Implemented missing handleLike function
+  const handleLike = useCallback(async (article: Article) => {
+    if (!currentUser) return setShowLoginModal(true);
+    const targetId = await ensureArticleSaved(article);
+    if (!targetId) return;
+    try {
+        await db.toggleLike(targetId, currentUser.id);
+        const [l, d] = await Promise.all([
+            db.getLikeCount(targetId),
+            db.getDislikeCount(targetId)
+        ]);
+        handleArticleUpdate({ ...article, id: targetId, likeCount: l, dislikeCount: d });
+    } catch (error) {}
+  }, [currentUser, handleArticleUpdate, ensureArticleSaved]);
 
-      try {
-          await db.toggleLike(targetId, currentUser.id);
-          const [nLike, nDislike] = await Promise.all([
-              db.getLikeCount(targetId),
-              db.getDislikeCount(targetId)
-          ]);
-          handleArticleUpdate({ ...article, id: targetId, likeCount: nLike, dislikeCount: nDislike });
-          showToast("Grazie per il tuo feedback positivo! ✨");
-      } catch (error) {
-          console.error("[BUON-UMORE] Errore Like:", error);
-      }
-  };
-
-  const handleDislike = async (article: Article) => {
-      if (!currentUser) return setShowLoginModal(true);
-      const targetId = await ensureArticleSaved(article);
-      if (!targetId) return;
-
-      try {
-          await db.toggleDislike(targetId, currentUser.id);
-          const [nLike, nDislike] = await Promise.all([
-              db.getLikeCount(targetId),
-              db.getDislikeCount(targetId)
-          ]);
-          handleArticleUpdate({ ...article, id: targetId, likeCount: nLike, dislikeCount: nDislike });
-          showToast("Feedback ricevuto.");
-      } catch (error) {
-          console.error("[BUON-UMORE] Errore Dislike:", error);
-      }
-  };
+  // Fix: Implemented missing handleDislike function
+  const handleDislike = useCallback(async (article: Article) => {
+    if (!currentUser) return setShowLoginModal(true);
+    const targetId = await ensureArticleSaved(article);
+    if (!targetId) return;
+    try {
+        await db.toggleDislike(targetId, currentUser.id);
+        const [l, d] = await Promise.all([
+            db.getLikeCount(targetId),
+            db.getDislikeCount(targetId)
+        ]);
+        handleArticleUpdate({ ...article, id: targetId, likeCount: l, dislikeCount: d });
+    } catch (error) {}
+  }, [currentUser, handleArticleUpdate, ensureArticleSaved]);
 
   const fetchNews = useCallback(async (query: string, label: string, forceAi: boolean) => {
     if (currentRequestMode.current === 'favorites') return;
-    
     setLoading(true);
     try {
       let finalArticles: Article[] = [];
@@ -171,13 +153,9 @@ export const useNewsApp = () => {
           return; 
         }
       }
-      
       const aiArticles = await fetchPositiveNews(query, label);
       if (aiArticles && aiArticles.length > 0) {
-        // Salviamo nel DB (upsert gestisce i duplicati a livello di database)
         await db.saveArticles(label, aiArticles);
-        
-        // Ricarichiamo dal cache per avere ID corretti e dati puliti
         const cachedAfterSave = await db.getCachedArticles(label);
         finalArticles = deduplicate(await enrichArticlesWithCounts(cachedAfterSave));
         setArticles(finalArticles);
@@ -185,7 +163,6 @@ export const useNewsApp = () => {
         showToast("Nessuna nuova notizia trovata ora.");
       }
     } catch (error: any) {
-      console.error("[BUON-UMORE] ❌ Errore caricamento notizie:", error);
     } finally {
       setLoading(false);
     }
@@ -208,20 +185,29 @@ export const useNewsApp = () => {
       }
     });
     db.getCurrentUserProfile().then(async user => {
+        if (!user) return;
         setCurrentUser(user);
-        if (user) {
-            const ids = await db.getUserFavoritesIds(user.id);
-            setFavoriteArticleIds(ids);
-        }
+        const ids = await db.getUserFavoritesIds(user.id);
+        setFavoriteArticleIds(ids);
     });
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     const loadCategories = async () => {
+      // Ottimizzazione: Usiamo sessionStorage per evitare di interrogare il DB ad ogni refresh se i dati sono già pronti
+      const cached = sessionStorage.getItem('abu_categories');
+      if (cached) {
+          const parsed = JSON.parse(cached);
+          setCategories(parsed);
+          if (!activeCategoryId && parsed.length > 0) setActiveCategoryId(parsed[0].id);
+          return;
+      }
+
       try {
         let dbCats = await db.getCategories(currentUser?.id);
         setCategories(dbCats);
+        sessionStorage.setItem('abu_categories', JSON.stringify(dbCats));
         if (!activeCategoryId && !searchTerm && dbCats.length > 0) {
             setActiveCategoryId(dbCats[0].id);
         }
@@ -268,16 +254,24 @@ export const useNewsApp = () => {
     handleAddCategory: async (l: string) => {
         if (!currentUser) return setShowLoginModal(true);
         const cat = await db.addCategory(l, `${l} notizie positive`, currentUser.id);
-        if (cat) { setCategories(p => [...p, cat]); setActiveCategoryId(cat.id); showToast(`Categoria "${l}" aggiunta! ✨`); }
+        if (cat) { 
+            setCategories(p => [...p, cat]); 
+            setActiveCategoryId(cat.id); 
+            sessionStorage.removeItem('abu_categories'); // Invalida cache
+            showToast(`Categoria "${l}" aggiunta! ✨`); 
+        }
     },
     handleDeleteCategory: async (id: string) => {
         if (!currentUser) return;
         if (await db.deleteCategory(id, currentUser.id)) {
             setCategories(p => p.filter(c => c.id !== id));
+            sessionStorage.removeItem('abu_categories'); // Invalida cache
             if (activeCategoryId === id) setActiveCategoryId(DEFAULT_CATEGORIES[0].id);
         }
     },
-    handleLike, handleDislike, loadNews: () => {
+    handleLike: (article: Article) => handleLike(article),
+    handleDislike: (article: Article) => handleDislike(article),
+    loadNews: () => {
       const cat = categories.find(c => c.id === activeCategoryId);
       if (searchTerm) fetchNews(searchTerm, searchTerm, true);
       else if (cat) fetchNews(cat.value, cat.label, true);
