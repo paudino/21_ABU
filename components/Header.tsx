@@ -38,9 +38,20 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const loadInitialQuote = async () => {
+      // Ottimizzazione: Evita chiamate al DB se abbiamo già una citazione per questa sessione
+      const cached = sessionStorage.getItem('abu_daily_quote');
+      if (cached) {
+          setQuote(JSON.parse(cached));
+          return;
+      }
+
       const q = await db.getRandomQuote();
-      if (q) setQuote(q);
-      else fetchNewQuote();
+      if (q) {
+          setQuote(q);
+          sessionStorage.setItem('abu_daily_quote', JSON.stringify(q));
+      } else {
+          fetchNewQuote();
+      }
   };
 
   const fetchNewQuote = async () => {
@@ -51,9 +62,9 @@ export const Header: React.FC<HeaderProps> = ({
         if (newQuote) {
             await db.saveQuote(newQuote);
             setQuote(newQuote);
+            sessionStorage.setItem('abu_daily_quote', JSON.stringify(newQuote));
         }
     } catch (e) {
-        console.error("Errore recupero citazione", e);
     } finally {
         setLoadingQuote(false);
     }
@@ -70,10 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className={`sticky top-0 z-[60] shadow-lg transition-all duration-500 bg-gradient-to-r ${getHeaderGradient()} text-white overflow-visible`}>
       <div className="max-w-7xl mx-auto px-3 md:px-6">
-        
         <div className="flex items-center justify-between py-2 md:py-3 gap-1 md:gap-4">
-            
-            {/* Logo Section */}
             <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
               <button 
                   onClick={fetchNewQuote}
@@ -86,25 +94,16 @@ export const Header: React.FC<HeaderProps> = ({
                       </svg>
                   </div>
               </button>
-              
               <div className="flex flex-col">
-                <h1 className="font-display font-bold text-sm md:text-xl tracking-tight leading-none">
-                  Buon Umore
-                </h1>
-                <span className="text-[7px] md:text-[9px] uppercase tracking-widest font-black opacity-70">
-                   Notizie Belle
-                </span>
+                <h1 className="font-display font-bold text-sm md:text-xl tracking-tight leading-none">Buon Umore</h1>
+                <span className="text-[7px] md:text-[9px] uppercase tracking-widest font-black opacity-70">Notizie Belle</span>
               </div>
             </div>
-
-            {/* Quote Desktop */}
             <div className="flex-1 px-4 text-center hidden sm:block">
                 <p className={`font-display italic text-sm text-white/90 line-clamp-1 transition-opacity ${loadingQuote ? 'opacity-30' : 'opacity-100'}`}>
                    "{quote ? quote.text : "Cose belle stanno per accadere..."}"
                 </p>
             </div>
-
-            {/* Actions Section */}
             <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0 ml-auto min-w-fit">
               <div className="relative">
                 <button 
@@ -113,7 +112,6 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <IconSettings className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
-
                 {showSettings && (
                   <div className="absolute top-12 right-0 bg-white text-slate-800 shadow-2xl rounded-2xl p-4 w-52 z-[100] border border-slate-100 animate-in fade-in slide-in-from-top-2 origin-top-right">
                     <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Opzioni</h4>
@@ -133,14 +131,12 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 )}
               </div>
-
               <button 
                 onClick={() => currentUser ? onToggleFavorites() : onLoginClick()}
                 className={`p-1.5 md:p-2 rounded-full transition-all border ${showFavoritesOnly && currentUser ? 'bg-white text-rose-500 border-white' : 'bg-white/10 text-white border-transparent'}`}
               >
                 <IconHeart filled={showFavoritesOnly && !!currentUser} className="w-4 h-4 md:w-5 md:h-5" />
               </button>
-
               {currentUser ? (
                 <div className="flex items-center gap-1 bg-white/10 rounded-full p-0.5 pr-1.5 md:pr-2.5 border border-white/20">
                   <img src={currentUser.avatar} alt="avatar" className="w-7 h-7 md:w-8 md:h-8 rounded-full border border-white/40 shadow-sm" />
@@ -154,9 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className={`min-w-[80px] md:min-w-[100px] px-3 md:px-5 py-1.5 rounded-full font-bold text-[11px] md:text-xs transition shadow-md whitespace-nowrap flex-shrink-0 active:scale-95 ${
                         theme === 'accessible' ? 'bg-yellow-400 text-black' : 'bg-white text-joy-600 hover:bg-joy-50'
                     }`}
-                >
-                  Accedi
-                </button>
+                >Accedi</button>
               )}
             </div>
         </div>
